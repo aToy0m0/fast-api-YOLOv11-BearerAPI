@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -33,6 +34,14 @@ app = FastAPI(
     title="YOLO11m FastAPI Detection API",
     description="Upload an image, authenticate via API key, and receive YOLO detections plus an annotated image.",
     version="0.1.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 必要に応じて特定オリジンへ絞り込む
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # APIキー認証の依存関数をここで組み立てて再利用

@@ -157,6 +157,13 @@ python test.py
 API = "http://127.0.0.1:8000/detect"
 ```
 
+逆にorijinを絞り込む場合は以下を書き換える
+```
+    allow_origins=["*"],  # 必要に応じて特定オリジンへ絞り込む
+    allow_origins=["http://localhost:5500", "http://your-webapp"],  # 開発用なら ["*"] でも可
+```
+
+
 ## 📊 レスポンス例（JSON）
 ```json
 {
