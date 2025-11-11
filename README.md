@@ -111,10 +111,14 @@ export YOLO_IOU_THRESHOLD=0.45       # 任意、未設定なら 0.45
 ```bash
 uvicorn main:app --reload
 ```
+サーバー外部からのアクセスを受け付ける場合
+```bash
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
 
 起動後に以下へアクセス：
 - Swagger UI: http://127.0.0.1:8000/docs
-
+- サーバー外部からのアクセスを受け付ける場合: http://＜サーバーIP＞:8000/docs
 
 ## 📦 テスト：APIリクエスト例
 ### sample画像を用意
