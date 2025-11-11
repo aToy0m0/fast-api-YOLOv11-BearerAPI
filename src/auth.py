@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import secrets
-from typing import Callable
+from typing import Callable, Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -11,11 +11,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def build_api_key_dependency(expected_api_key: str) -> Callable[[HTTPAuthorizationCredentials | None], str]:
+def build_api_key_dependency(expected_api_key: str) -> Callable[[Optional[HTTPAuthorizationCredentials]], str]:
     """`.env` などで定義したキーと Bearer ヘッダーを照合する依存関数を生成。"""
 
     async def require_api_key(
-        credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     ) -> str:
         if credentials is None or credentials.scheme.lower() != "bearer":
             raise HTTPException(

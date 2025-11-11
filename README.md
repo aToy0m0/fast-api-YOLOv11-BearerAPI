@@ -76,13 +76,36 @@ Ultralytics公式から yolo11m.pt を取得して、`models/` に保存：
 - 🔗 https://github.com/ultralytics/assets/releases
 - 保存例: `project/models/yolo11m.pt`
 
+CLIの場合
+```
+mkdir -p models
+cd models/
+
+TAG=v8.3.0   # 最新タグに置き換えてください
+
+curl -L -o yolo11m.pt "https://github.com/ultralytics/assets/releases/download/${TAG}/yolo11m.pt"
+curl -L -o yolo11n.pt "https://github.com/ultralytics/assets/releases/download/${TAG}/yolo11n.pt"
+```
+
 ### 🔐 APIキーと推論パラメータの設定
+
 ```bash
+openssl rand -hex 32
+cp .env.example .env
+nano .env
+```
+
+```
+$ cat .env
+
+# use command below to generate a secret key
+## openssl rand -hex 32
+DETECTION_API_KEY="your-secret-key"
+
 export DETECTION_API_KEY="your-secret-key"
 export YOLO_CONF_THRESHOLD=0.35      # 任意、未設定なら 0.25
 export YOLO_IOU_THRESHOLD=0.45       # 任意、未設定なら 0.45
 ```
-サーバー起動前に環境変数を設定しておくと、FastAPI の依存関係が自動的に読み取ります。
 
 ### 🚀 サーバー起動方法
 ```bash
@@ -103,6 +126,11 @@ https://ultralytics.com/images/zidane.jpg
 project/
 ├── test/
 │   └── sample.jpg  # リネームしたzidane.jpg
+```
+CLIの場合
+```
+mkdir -p test
+curl -L https://ultralytics.com/images/zidane.jpg -o test/sample.jpg
 ```
 
 ### Python (requests)
@@ -138,6 +166,12 @@ print(res.json())
   },
   "image_with_boxes": "data:image/jpeg;base64,/9j/4AAQSk..."
 }
+```
+
+# トラブルシュート
+ImportError: libGL.so.1: cannot open shared object file: No such file or directory
+```
+sudo yum install -y mesa-libGL
 ```
 
 # 参考公式ドキュメント
