@@ -121,6 +121,15 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 - サーバー外部からのアクセスを受け付ける場合: http://＜サーバーIP＞:8000/docs
 
 ## 📦 テスト：APIリクエスト例
+
+### curl
+```bash
+curl -s http://<server-ip>:8000/healthz
+```
+```bash
+curl.exe -s http://<server-ip>:8000/healthz
+```
+
 ### sample画像を用意
 以下をダウンロードし、sample.jpgにリネーム
 ```
@@ -138,15 +147,14 @@ curl -L https://ultralytics.com/images/zidane.jpg -o test/sample.jpg
 ```
 
 ### Python (requests)
-```python
-import requests
+```bash
+cd test/
+python test.py
+```
 
-url = "http://127.0.0.1:8000/detect"
-headers = {"Authorization": "Bearer your-secret-key"}
-files = {"file": open("test.jpg", "rb")}
-
-res = requests.post(url, headers=headers, files=files)
-print(res.json())
+外部サーバー向けにテストする場合は、test.py以下のアドレスを変更する
+```
+API = "http://127.0.0.1:8000/detect"
 ```
 
 ## 📊 レスポンス例（JSON）
