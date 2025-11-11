@@ -1,0 +1,57 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments & tooling
+.venv/
+venv/
+env/
+.python-version
+
+# Packaging / build outputs
+build/
+dist/
+*.egg-info/
+
+# Logs & coverage
+*.log
+log.log
+.coverage*
+htmlcov/
+
+# IDE / editor settings
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Environment & secrets
+.env
+.env.*
+.env*
+!.env.example
+
+# Cache directories
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.uv/
+
+# Model weights and large binaries (keep only tracked ones explicitly)
+models/*.pt
+
+# Local data
+data/
+
+# Documentation build outputs
+_docs/
+_docs/*
+_samples/
+_samples/*
+
+test/sample.jpg
+test/zidane.jpg
+test/annotated.jpg
