@@ -1,17 +1,21 @@
 """FastAPI application exposing YOLO11m detections with API key auth."""
 from __future__ import annotations
 
+import base64
+import logging
+from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from PIL import Image
 
 from src.auth import build_api_key_dependency
 from src.image_utils import draw_detections, encode_image_to_data_uri, load_image_from_bytes
@@ -28,6 +32,87 @@ MODEL_PATH = APP_DIR / "models" / "yolo11m.pt"
 DEFAULT_API_KEY = os.getenv("DETECTION_API_KEY", "change-me")
 CONF_THRESHOLD = float(os.getenv("YOLO_CONF_THRESHOLD", "0.25"))
 IOU_THRESHOLD = float(os.getenv("YOLO_IOU_THRESHOLD", "0.45"))
+MAX_IMAGE_EDGE = int(os.getenv("YOLO_MAX_IMAGE_EDGE", "2048"))
+MAX_IMAGE_PIXELS = int(os.getenv("YOLO_MAX_IMAGE_PIXELS", "4000000"))
+
+LOG_DIR = APP_DIR / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "server.log"
+
+
+def configure_logger() -> logging.Logger:
+    """Stream logs to console and rotate a local file."""
+
+    logger = logging.getLogger("yolo-fastapi")
+    if logger.handlers:
+        return logger
+
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    logger.setLevel(log_level)
+
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+
+    file_handler = RotatingFileHandler(
+        LOG_FILE,
+        maxBytes=int(os.getenv("LOG_MAX_BYTES", 5 * 1024 * 1024)),
+        backupCount=int(os.getenv("LOG_BACKUP_COUNT", 5)),
+    )
+    file_handler.setFormatter(formatter)
+
+    logger.addHandler(stream_handler)
+    logger.addHandler(file_handler)
+    logger.propagate = False
+    return logger
+
+
+# ベースとなる logger を確保
+logger = configure_logger()
+
+
+def _choose_resample() -> int:
+    return Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
+
+
+def prepare_image_for_inference(image: Image.Image) -> Tuple[Image.Image, Dict[str, Any]]:
+    """Resize the image if it is too large for inference."""
+
+    width, height = image.size
+    scale = 1.0
+    trigger = None
+    max_edge = max(width, height)
+
+    if MAX_IMAGE_EDGE > 0 and max_edge > MAX_IMAGE_EDGE:
+        scale = min(scale, MAX_IMAGE_EDGE / max_edge)
+        trigger = "edge"
+
+    total_pixels = width * height
+    if MAX_IMAGE_PIXELS > 0 and total_pixels > MAX_IMAGE_PIXELS:
+        pixel_scale = (MAX_IMAGE_PIXELS / total_pixels) ** 0.5
+        if pixel_scale < scale:
+            trigger = "pixels"
+        scale = min(scale, pixel_scale)
+
+    if scale < 1.0:
+        new_size = (max(1, int(width * scale)), max(1, int(height * scale)))
+        resized = image.resize(new_size, resample=_choose_resample())
+        return resized, {
+            "scaled": True,
+            "scale": scale,
+            "trigger": trigger,
+            "original_size": (width, height),
+            "final_size": new_size,
+        }
+
+    return image, {
+        "scaled": False,
+        "scale": 1.0,
+        "trigger": None,
+        "original_size": (width, height),
+        "final_size": (width, height),
+    }
 
 # FastAPI インスタンスを初期化（OpenAPI 情報はここで定義）
 app = FastAPI(
@@ -64,6 +149,15 @@ class DetectionResponse(BaseModel):
     image_with_boxes: str = Field(..., description="Annotated image as Base64 data URI")
 
 
+class ImagePayload(BaseModel):
+    fileName: str
+    base64: str
+
+
+class DetectionRequest(BaseModel):
+    images: List[ImagePayload]
+
+
 @app.on_event("startup")
 def _startup() -> None:
     """FastAPI 起動時に一度だけモデルをロードし、app.state にキャッシュする。"""
@@ -80,18 +174,75 @@ def healthcheck() -> JSONResponse:
 
 @app.post("/detect", response_model=DetectionResponse)
 async def detect_objects(
-    file: UploadFile = File(..., description="Image file (JPEG/PNG)"),
+    request: Request,
+    file: Optional[UploadFile] = File(None, description="Image file (JPEG/PNG)"),
     _: str = Depends(require_api_key),
 ) -> DetectionResponse:
-    """画像を受け取り、YOLO11m 推論結果と可視化画像を返すメイン処理。"""
+    """画像（multipart もしくは JSON）を受け取り、YOLO11m 推論結果と可視化画像を返す。"""
 
-    # 1. ファイルを読み込み、空アップロードを弾く
-    contents = await file.read()
-    if not contents:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file uploaded")
+    # 1. 入力から画像バイトを取得
+    contents: Optional[bytes] = None
+    original_source: str = "file"
+    if file is not None:
+        original_source = file.filename or "upload"
+        contents = await file.read()
+        if not contents:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file uploaded")
+    else:
+        content_type = request.headers.get("content-type", "")
+        if content_type.startswith("application/json"):
+            try:
+                raw_payload = await request.json()
+                payload = DetectionRequest(**raw_payload)
+            except Exception as exc:  # broad: validation or JSON error
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON payload") from exc
+
+            if not payload.images:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="images array is required")
+
+            first_image = payload.images[0]
+            original_source = first_image.fileName or "json"
+            base64_data = first_image.base64.split(",", 1)[-1]
+            try:
+                contents = base64.b64decode(base64_data)
+            except (base64.binascii.Error, ValueError) as exc:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid base64 payload") from exc
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="file or images payload required")
 
     # 2. PIL へ変換してから YOLO11m で推論
+    assert contents is not None  # appease type checker; validated above
     image = load_image_from_bytes(contents)
+    width, height = image.size
+    byte_length = len(contents)
+    logger.info(
+        "Received image source=%s size=%d bytes (~%.1f KB) resolution=%dx%d px",
+        original_source,
+        byte_length,
+        byte_length / 1024,
+        width,
+        height,
+    )
+    image, resize_info = prepare_image_for_inference(image)
+    final_width, final_height = resize_info["final_size"]
+    if resize_info["scaled"]:
+        logger.info(
+            "Prepared image for YOLO source=%s resolution=%dx%d px (original=%dx%d px, scale=%.3f, trigger=%s)",
+            original_source,
+            final_width,
+            final_height,
+            resize_info["original_size"][0],
+            resize_info["original_size"][1],
+            resize_info["scale"],
+            resize_info["trigger"],
+        )
+    else:
+        logger.info(
+            "Prepared image for YOLO source=%s resolution=%dx%d px (no resize)",
+            original_source,
+            final_width,
+            final_height,
+        )
     model = get_or_load_model(app.state, MODEL_PATH)
     results = model.predict(
         source=image,

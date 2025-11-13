@@ -4,3 +4,4 @@ ultralytics
 opencv-python
 pillow
 python-dotenv
+python-multipart

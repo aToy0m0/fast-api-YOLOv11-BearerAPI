@@ -5,8 +5,15 @@
 */
 (function () {
   // ==== 初期値（必要に応じて書き換え） ====
-  var DEFAULT_API_URL = "http://server-ip:8000/detect";
-  var DEFAULT_API_KEY = "DEFAULT_API_KEY";
+  var DEFAULT_URL = "server-ip";
+  var DEFAULT_API_URL = "http://"+DEFAULT_URL+":8000/detect";
+  var DEFAULT_API_KEY = "API_KEY";
+
+  // ==== 定数 ====
+  // ログを表示するか
+  var SHOW_LOG = false; // true , false
+  // 応答JSONを表示するか
+  var SHOW_JSON = true; // true , false
 
   // ==== DOM生成ヘルパー ====
   function createLabel(text, input) {
@@ -66,7 +73,7 @@
   statusArea.readOnly = true;
 
   var jsonArea = document.createElement("textarea");
-  jsonArea.rows = 12;
+  jsonArea.rows = 8;
   jsonArea.style.width = "100%";
   jsonArea.style.marginTop = "12px";
   jsonArea.readOnly = true;
@@ -81,8 +88,12 @@
   container.appendChild(createLabel("APIキー (Bearer)", apiKeyInput));
   container.appendChild(createLabel("送信する画像", fileInput));
   container.appendChild(sendButton);
-  container.appendChild(statusArea);
-  container.appendChild(jsonArea);
+  if (SHOW_LOG) {
+    container.appendChild(statusArea);
+  }
+  if (SHOW_JSON) {
+    container.appendChild(jsonArea);
+  }
   container.appendChild(previewImage);
 
   document.body.insertBefore(container, document.body.firstChild);
@@ -113,9 +124,9 @@
       setTimeout(function () {
         if (controller) {
           controller.abort();
-          log("AbortController により 120 秒で中断");
+          log("AbortController により 20 秒で中断");
         }
-      }, 120000);
+      }, 20000);
     }
 
     log("リクエスト送信開始");
