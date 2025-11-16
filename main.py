@@ -114,6 +114,27 @@ def prepare_image_for_inference(image: Image.Image) -> Tuple[Image.Image, Dict[s
         "final_size": (width, height),
     }
 
+
+def log_response_summary(source: str, response: "DetectionResponse") -> None:
+    """Log a concise summary of what will be returned to the client."""
+
+    detections_preview = [
+        {
+            "label": det.label,
+            "confidence": round(det.confidence, 3),
+            "box": [round(v, 2) for v in det.box],
+        }
+        for det in response.detections[:3]
+    ]
+    logger.info(
+        "Responding source=%s detections=%d counts=%s annotated_image_bytes=%d preview=%s",
+        source,
+        len(response.detections),
+        response.counts,
+        len(response.image_with_boxes or ""),
+        detections_preview,
+    )
+
 # FastAPI インスタンスを初期化（OpenAPI 情報はここで定義）
 app = FastAPI(
     title="YOLO11m FastAPI Detection API",
@@ -275,4 +296,5 @@ async def detect_objects(
         counts=counts,
         image_with_boxes=encode_image_to_data_uri(annotated),
     )
+    log_response_summary(original_source, response)
     return response
