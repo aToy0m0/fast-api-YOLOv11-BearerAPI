@@ -47,10 +47,10 @@ project/
 
 ## ⚙️ 環境構築手順（condaなし）
 
-### 1️⃣ Python 環境確認
+### 1️⃣ WSLを開き、リポジトリをクローン
 ```bash
-python --version
-# → 3.8 以上であること
+git clone https://github.com/aToy0m0/fast-api-YOLOv11-BearerAPI
+cd fast-api-YOLOv11-BearerAPI
 ```
 
 ### 2️⃣ 仮想環境作成
@@ -101,10 +101,6 @@ $ cat .env
 # use command below to generate a secret key
 ## openssl rand -hex 32
 DETECTION_API_KEY="your-secret-key"
-
-export DETECTION_API_KEY="your-secret-key"
-export YOLO_CONF_THRESHOLD=0.35      # 任意、未設定なら 0.25
-export YOLO_IOU_THRESHOLD=0.45       # 任意、未設定なら 0.45
 ```
 
 ### 🚀 サーバー起動方法
@@ -203,4 +199,4 @@ Author: aToy0m0
 Project Start: 2025-11
 
 # License
-License: GNU AGPL v3 (see LICENSE)
+License: GNU AGPL v3（Ultralytics YOLO と同一、詳細は `LICENSE` を参照）
