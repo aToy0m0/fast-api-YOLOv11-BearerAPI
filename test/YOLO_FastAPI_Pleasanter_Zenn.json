@@ -1,1 +1,264 @@
-﻿{"HeaderInfo":{"AssemblyVersion":"1.4.20.0","BaseSiteId":113,"Server":"","CreatorName":"","PackageTime":"2025-11-24T14:26:30.5281962+09:00","Convertors":[{"SiteId":113,"SiteTitle":"YOLO_といch","ReferenceType":"Sites","IncludeData":false,"Order":"[]"},{"SiteId":114,"SiteTitle":"YOLOｘFastAPI","ReferenceType":"Results","IncludeData":false},{"SiteId":115,"SiteTitle":"YOLO-output","ReferenceType":"Results","IncludeData":false}],"IncludeSitePermission":false,"IncludeRecordPermission":false,"IncludeColumnPermission":false,"IncludeNotifications":false,"IncludeReminders":false},"Sites":[{"TenantId":1,"SiteId":113,"Title":"YOLO_といch","SiteName":"","SiteGroupName":"","Body":"","GridGuide":"","EditorGuide":"","CalendarGuide":"","CrosstabGuide":"","GanttGuide":"","BurnDownGuide":"","TimeSeriesGuide":"","AnalyGuide":"","KambanGuide":"","ImageLibGuide":"","ReferenceType":"Sites","ParentId":0,"InheritPermission":113,"SiteSettings":{"Version":1.017,"ReferenceType":"Sites","NoDisplayIfReadOnly":false,"NotInheritPermissionsWhenCreatingSite":false},"Publish":false,"DisableCrossSearch":false,"Comments":[]},{"TenantId":1,"SiteId":114,"Title":"YOLOｘFastAPI","SiteName":"","SiteGroupName":"","Body":"","GridGuide":"","EditorGuide":"","CalendarGuide":"","CrosstabGuide":"","GanttGuide":"","BurnDownGuide":"","TimeSeriesGuide":"","AnalyGuide":"","KambanGuide":"","ImageLibGuide":"","ReferenceType":"Results","ParentId":113,"InheritPermission":114,"SiteSettings":{"Version":1.017,"ReferenceType":"Results","GridPageSize":10,"GridEditorType":10,"GridColumns":["ResultId","Title","Body"],"EditorColumnHash":{"General":["ResultId","Title","Body"]},"SectionLatestId":4,"Columns":[{"ColumnName":"Title","AutoNumberingFormat":"[yyyyMMdd]-[nnnnn]-YOLO画像認識","AutoNumberingResetType":"Day","ValidateRequired":false,"EditorReadOnly":true},{"ColumnName":"Body","ViewerSwitchingType":2,"ThumbnailLimitSize":600.0}],"Styles":[{"Title":"幅調整","Index":true,"Body":"","Id":1}],"ServerScripts":[{"Title":"serverside-test","Name":"serverside-test","AfterCreate":true,"AfterUpdate":true,"Body":"// =======================\n// 参考資料\n// =======================\n// FAQ：バッチ処理で添付ファイルを含んだレコードを新規作成したい\n// https://pleasanter.org/ja/manual/faq-create-record-with-attachment\n// →開発者向け機能：API：テーブル操作：レコード作成\n//   https://pleasanter.org/ja/manual/api-record-create\n// \n// テーブルの管理：エディタ：項目の詳細設定：自動採番\n// https://pleasanter.org/ja/manual/auto-numbering\n\n\n// =======================\n// MARK: 初期設定\n// =======================\n\n// pleasanterサーバーから見たFast APIサーバーのIP\nconst API_BASE_URL = \"http://API_BASE_URL:8000\";\nconst API_ENDPOINT = API_BASE_URL + \"/detect\";\nconst YOLO_API_KEY = \"YOLO_API_KEY\";\n\n// pleasanterサーバーから見たpleasanterサーバー自身のIP\nconst PLEASANTER_BASE_URL = \"http://localhost\";\nconst PLEASANTER_API_KEY = \"PLEASANTER_API_KEY\";\n\n// 子サイトID（必要に応じて変更）\nconst CHILD_SITE_ID = CHILD_SITE_ID;\n\n// HTTPリクエストのタイムアウト設定値\nconst REQUEST_TIMEOUT_MS = 15000;\n\n// =======================\n// MARK: MediaType = \"application/json\" で POST リクエストを送信する関数\n// =======================\nfunction postJson(url, body, headers = {}) {\n  context.Log(\"===== HTTP POST (httpClient) =====\");\n  httpClient.RequestHeaders.Clear();\n  httpClient.RequestUri = url;\n  httpClient.MediaType = \"application/json\";\n  for (const [key, value] of Object.entries(headers)) {\n    httpClient.RequestHeaders.Add(key, value);\n  }\n  httpClient.Content = JSON.stringify(body);\n  httpClient.TimeOut = REQUEST_TIMEOUT_MS;\n\n  const responseText = httpClient.Post();\n  context.Log(`🔄 HTTP Status: ${httpClient.StatusCode}`);\n  context.Log(`🔍 IsSuccess: ${httpClient.IsSuccess}`);\n  if (httpClient.IsTimeOut) {\n    context.Log(\"⚠️ タイムアウト発生: リクエストが指定時間内に応答しませんでした。\");\n  }\n\n  if (!httpClient.IsSuccess) {\n    context.Log(`レスポンス本文: ${responseText}`);\n    throw new Error(`HTTPエラー: ${httpClient.StatusCode}`);\n  }\n\n  try {\n    const json = JSON.parse(responseText);\n    return { data: json, rawText: responseText };\n  } catch (e) {\n    context.Log(`❌ JSON解析エラー: ${e.message}`);\n    context.Log(`レスポンス内容: ${responseText}`);\n    throw new Error(`JSON解析エラー: ${e.message}`);\n  }\n}\n\n// =======================\n// MARK: APIを使って添付ファイルを Base64 で取得する関数\n// =======================\nfunction getAttachmentBase64(guid) {\n  const url = `${PLEASANTER_BASE_URL}/api/binaries/${guid}/get`;\n\n  context.Log(\"===== getAttachmentBase64 開始 =====\");\n  context.Log(`📡 baseUrl : ${PLEASANTER_BASE_URL}`);\n  context.Log(`📎 URL : ${url}`);\n  context.Log(`🎯 対象GUID : ${guid}`);\n\n  const requestData = {\n    ApiVersion: \"1.1\",\n    ApiKey: PLEASANTER_API_KEY\n  };\n\n  const { data } = postJson(url, requestData);\n\n  if (!data || !data.Response || !data.Response.Base64) {\n    context.Log(\"⚠️ 応答にBase64データが含まれていません。\");\n    throw new Error(\"Base64データが存在しません。\");\n  }\n\n  context.Log(`📦 添付ファイル名: ${data.Response.Name || \"(不明)\"}`);\n  context.Log(`📏 ファイルサイズ: ${data.Response.Size || \"N/A\"} bytes`);\n  context.Log(\"===== getAttachmentBase64 完了 =====\");\n\n  return data.Response.Base64;\n}\n\n// =======================\n// MARK: data URLからBase64と拡張子を抽出する関数\n// =======================\nfunction extractBase64FromDataUrl(dataUrl) {\n  if (typeof dataUrl !== \"string\" || !dataUrl.length) {\n    context.Log(\"⚠️ image_with_boxes が空文字のため解析をスキップします。\");\n    return null;\n  }\n\n  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);\n  if (!match) {\n    context.Log(\"⚠️ image_with_boxes の形式が data URL ではありません。\");\n    return null;\n  }\n\n  const mimeType = match[1];\n  const base64 = match[2];\n  if (!base64) {\n    context.Log(\"⚠️ image_with_boxes に Base64 が含まれていません。\");\n    return null;\n  }\n\n  let extension = \".png\";\n  if (mimeType && mimeType.includes(\"/\")) {\n    const subtype = mimeType.split(\"/\")[1].split(\"+\")[0];\n    if (subtype) {\n      extension = \".\" + subtype;\n    }\n  }\n\n  return { mimeType, base64, extension };\n}\n\n// =======================\n// MARK: YOLO応答から DescriptionHash を構築\n// =======================\nfunction buildDescriptionHashFromYolo(yoloResult) {\n  if (!yoloResult || typeof yoloResult !== \"object\") {\n    return null;\n  }\n\n  const descriptionHash = {};\n\n  if (yoloResult.counts && Object.keys(yoloResult.counts).length) {\n    try {\n      descriptionHash.DescriptionA = JSON.stringify(yoloResult.counts, null, 2);\n    } catch (e) {\n      context.Log(`⚠️ counts の JSON 化に失敗: ${e.message}`);\n    }\n  }\n\n  if (Array.isArray(yoloResult.detections) && yoloResult.detections.length) {\n    try {\n      descriptionHash.DescriptionC = JSON.stringify(yoloResult.detections, null, 2);\n    } catch (e) {\n      context.Log(`⚠️ detections の JSON 化に失敗: ${e.message}`);\n    }\n  }\n\n  return Object.keys(descriptionHash).length ? descriptionHash : null;\n}\n\n// =======================\n// MARK: APIを使って DescriptionB にBase64形式の画像を上書きする関数\n// =======================\nfunction updateImageHashOnly(recordId, image, options = {}) {\n  if (!recordId) {\n    context.Log(\"⚠️ recordId が取得できないため ImageHash 更新をスキップします。\");\n    return;\n  }\n  if (!image || !image.base64) {\n    context.Log(\"⚠️ 更新対象の画像情報が不足しているため ImageHash 更新をスキップします。\");\n    return;\n  }\n\n  let extension = image.extension || (image.name ? \".\" + image.name.split(\".\").pop() : \".jpg\");\n  if (!extension.startsWith(\".\")) {\n    extension = \".\" + extension;\n  }\n  extension = extension.toLowerCase();\n  const position = Number.isFinite(options.position) ? options.position : -1;\n  const alt = options.alt || image.alt || image.name || \"imageBody\";\n  const headNewLine = options.headNewLine ?? true;\n  const endNewLine = options.endNewLine ?? true;\n\n  const descriptionHash = options.descriptionHash && Object.keys(options.descriptionHash).length\n    ? options.descriptionHash\n    : null;\n\n  const payload = {\n    ApiVersion: \"1.1\",\n    ApiKey: PLEASANTER_API_KEY,\n    Body: \"\",\n    ImageHash: {\n      DescriptionB: {\n        HeadNewLine: headNewLine,\n        EndNewLine: endNewLine,\n        Position: position,\n        Alt: alt,\n        Extension: extension,\n        Base64: image.base64\n      }\n    }\n  };\n\n  context.Log(`📦 画像情報: name=${image.name || \"(不明)\"}, extension=${extension}, alt=${alt}`);\n\n  if (descriptionHash) {\n    payload.DescriptionHash = descriptionHash;\n  }\n\n  const url = `${PLEASANTER_BASE_URL}/api/items/${recordId}/update`;\n  context.Log(\"===== updateImageHashOnly 開始 =====\");\n  context.Log(`📡 URL: ${url}`);\n  context.Log(`🆔 レコードID: ${recordId}`);\n  const { rawText } = postJson(url, payload);\n  context.Log(`✅ ImageHash更新応答: ${rawText.substring(0, 200)}...`);\n  context.Log(\"===== updateImageHashOnly 完了 =====\");\n}\n\n// =======================\n// MARK: 子レコードのID検索する関数(複数存在する場合は新しい順にソートされる)\n// =======================\nfunction getChildRecord(parentRecordId) {\n  context.Log(`親レコードID : ${parentRecordId}`);\n  if (!parentRecordId) {\n    context.Log(\"⚠ 親レコードIDが空のため子レコード検索をスキップします。\");\n    return null;\n  }\n\n  let data = {\n    \"View\": {\n      \"ColumnFilterHash\": {\n          \"ClassA\": `[\"${parentRecordId}\"]`\n      },\n      \"ColumnSorterHash\":{\n        \"DateA\":\"asc\"\n      }\n    }\n  };\n  context.Log(`子レコード検索 : data: ${JSON.stringify(data)}`);\n  let records;\n  try {\n    records = items.Get(CHILD_SITE_ID, JSON.stringify(data));\n    context.Log(`子レコード検索 : records.Length: ${JSON.stringify(records.Length)}`);\n  } catch (e) {\n    context.Log(`❗ 子レコード検索 API で例外が発生しました: ${e.message}`);\n    context.Error(`child search failed: ${e.message}`);\n    return null;\n  }\n\n  if (records.Length) {\n    context.Log(`records.Length : ${records.Length}`);\n    context.Log(\"正しいメソッドはLengthです。\");\n  } else {\n    context.Log(`records.length : ${records.length}`);\n    context.Log(\"正しいメソッドはlengthです。\");\n  }\n\n  for (let record of records) {\n    context.Log(`children ResultId : ${record.ResultId}`);\n  }\n\n  // return records[0]?.ResultId || null;\n  return records || null;\n}\n// =======================\n// MARK: メイン処理\n// =======================\ntry {\n  context.Log(\"===== 添付＋本文画像処理開始 =====\");\n\n  const imagesBase64 = [];\n\n  // MARK: 1. Body 内の画像 (/binaries/xxx/show) のみを取得 ---\n  const body = model.Body || \"\";\n  const regex = /\\/binaries\\/([A-Fa-f0-9\\-]{32,})\\/show/g;\n  let match;\n  while ((match = regex.exec(body)) !== null) {\n    const guid = match[1];\n    context.Log(`Body画像検出 GUID=${guid}`);\n    const b64 = getAttachmentBase64(guid);\n    imagesBase64.push({ name: `${guid}.jpg`, source: \"body\", base64: b64 });\n  }\n\n  context.Log(`✅ 取得完了: ${imagesBase64.length} 件を Base64 化しました。`);\n\n  // MARK: 2. 本文画像を優先し1枚だけ YOLO Fast API へ送信 ---\n  let yoloResult = null;\n  let selectedImage = null;\n  let boxedImage = null;\n  if (imagesBase64.length) {\n    selectedImage = imagesBase64.find(img => img.source === \"body\") || imagesBase64[0];\n    context.Log(`🖼 送信対象: ${selectedImage.name} (source=${selectedImage.source})`);\n\n    const payload = {\n      images: [{\n        fileName: selectedImage.name,\n        base64: selectedImage.base64\n      }]\n    };\n\n    try {\n      const { data, rawText } = postJson(\n        API_ENDPOINT,\n        payload,\n        { Authorization: \"Bearer \" + YOLO_API_KEY }\n      );\n\n      yoloResult = data;\n      context.Log(`✅ YOLO応答: ${rawText.substring(0, 500)}...`);\n\n      if (data.image_with_boxes) {\n        const parsedImage = extractBase64FromDataUrl(data.image_with_boxes);\n        if (parsedImage) {\n          const originalName = selectedImage && selectedImage.name ? selectedImage.name : \"yolo\";\n          const baseName = originalName.replace(/\\.[^.]+$/, \"\");\n          boxedImage = {\n            name: `${baseName}_boxes`,\n            base64: parsedImage.base64,\n            extension: parsedImage.extension,\n            alt: `${baseName}_boxes`\n          };\n          context.Log(\"✅ image_with_boxes を DescriptionB 用の画像として準備しました。\");\n        } else {\n          context.Log(\"⚠️ image_with_boxes の解析に失敗したため元画像を使用します。\");\n        }\n      } else {\n        context.Log(\"⚠️ YOLO応答に image_with_boxes が含まれていません。\");\n      }\n    } catch (apiError) {\n      context.Log(`❌ YOLO API 呼び出し失敗: ${apiError.message}`);\n      context.Error(`YOLO API error: ${apiError.message}`);\n    }\n  } else {\n    context.Log(\"⚠️ 送信する画像が無いため YOLO API 呼び出しをスキップしました。\");\n  }\n\n  model.DescriptionA = JSON.stringify({\n    images: imagesBase64.map(img => ({\n      fileName: img.name,\n      source: img.source,\n      base64Preview: img.base64.substring(0, 40) + \"...\"\n    })),\n    selectedImage: selectedImage ? {\n      fileName: selectedImage.name,\n      source: selectedImage.source\n    } : null,\n    yoloResult\n  }, null, 2);\n\n  // MARK: 3. API経由で ImageHash を更新 (DescriptionB) ---\n  //// boxedImage or selectedImage(元画像) の優先順位で設定\n  let imageForHash = null;\n  if (boxedImage) {\n    context.Log(\"📎 DescriptionB 用に image_with_boxes を使用します。\");\n    imageForHash = boxedImage;\n  } else if (selectedImage) {\n    context.Log(\"📎 DescriptionB 用に元画像を使用します。\");\n    imageForHash = selectedImage;\n  }\n  // \n  if (imageForHash) {\n    // 子レコードを検索し、ないのであれば作成\n    const recordId = model.ResultId;\n    let childRecordId = null;\n    const results = getChildRecord(recordId);\n    if (!results) {\n      context.Log(`❌ getChildRecord -> results取得エラー`);\n    } else if (results.Length > 0) {\n      context.Log(`✅ 子レコードが既に存在します。 : ${results[0].ResultId}`);\n      // 検索した子レコードのIDを代入\n      childRecordId = results[0].ResultId;\n    } else {\n      context.Log(`📎 子レコードが存在しません。新規作成します : ${results.Length} 件`);\n      // 子レコードを作成し、IDを取得\n      let apiModelNewChild = items.NewResult();\n      //// 親レコードIDを子レコードのクラスAに設定し、リンクさせる\n      apiModelNewChild.ClassA = model.ResultId;\n      context.Log(`apiModelNewChild.ClassA : ${apiModelNewChild.ClassA}`);\n      items.Create(CHILD_SITE_ID, apiModelNewChild);\n      //// 作成した子レコードのIDを代入\n      childRecordId = apiModelNewChild.ResultId;\n    }\n    // const childRecordId = apiModelNewChild.ResultId;\n    context.Log(`childRecordId : ${childRecordId}`);\n    const descriptionHash = buildDescriptionHashFromYolo(yoloResult);\n    \n    // 子レコードのImageHash 更新\n    try {\n      updateImageHashOnly(childRecordId, imageForHash, {\n        position: 3,\n        headNewLine: false,\n        endNewLine: false,\n        alt: imageForHash.alt || imageForHash.name,\n        descriptionHash\n      });\n      if (boxedImage) {\n        context.Log(\"📎 DescriptionB に image_with_boxes を登録しました。\");\n      } else {\n        context.Log(\"📎 image_with_boxes が無いため元画像を登録しました。\");\n      }\n    } catch (updateError) {\n      context.Log(`❌ ImageHash更新API エラー: ${updateError.message}`);\n      context.Error(`ImageHash update failed: ${updateError.message}`);\n    }\n  } else {\n    context.Log(\"⚠️ ImageHash を設定する画像が無いため API 更新をスキップしました。\");\n  }\n\n  context.Log(\"===== 処理完了: DescriptionA 更新 =====\");\n} catch (e) {\n  context.Log(`❌ Error: ${e.message}`);\n  context.Error(`Error in processing: ${e.message}`);\n}","Functionalize":true,"TryCatch":true,"Id":2}],"NoDisplayIfReadOnly":false,"NotInheritPermissionsWhenCreatingSite":false},"Publish":false,"DisableCrossSearch":false,"Comments":[]},{"TenantId":1,"SiteId":115,"Title":"YOLO-output","SiteName":"","SiteGroupName":"","Body":"","GridGuide":"","EditorGuide":"","CalendarGuide":"","CrosstabGuide":"","GanttGuide":"","BurnDownGuide":"","TimeSeriesGuide":"","AnalyGuide":"","KambanGuide":"","ImageLibGuide":"","ReferenceType":"Results","ParentId":113,"InheritPermission":113,"SiteSettings":{"Version":1.017,"ReferenceType":"Results","GridColumns":["ResultId","ClassA","DescriptionA","DescriptionB","DescriptionC"],"EditorColumnHash":{"General":["ResultId","ClassA","Ver","_Section-3","DescriptionA","_Section-2","DescriptionB","_Section-1","DescriptionC","Comments"]},"SectionLatestId":3,"Sections":[{"Id":3,"LabelText":"見出し:個数","AllowExpand":true,"Expand":false},{"Id":2,"LabelText":"見出し:ボックス付き画像","AllowExpand":false,"Expand":true},{"Id":1,"LabelText":"見出し:詳細ログ","AllowExpand":true,"Expand":false}],"LinkColumns":["ResultId","ClassA","DescriptionA","DescriptionB","DescriptionC"],"Columns":[{"ColumnName":"ClassA","LabelText":"YOLOｘFastAPI","ChoicesText":"[[114]]","CellWidth":60,"Link":true,"SearchType":"PartialMatch"},{"ColumnName":"ResultId","CellWidth":60}],"Links":[{"ColumnName":"ClassA","SiteId":114}],"NoDisplayIfReadOnly":false,"NotInheritPermissionsWhenCreatingSite":false},"Publish":false,"DisableCrossSearch":false,"Comments":[]}],"Data":[],"Permissions":[],"PermissionIdList":{"DeptIdList":[],"GroupIdList":[],"UserIdList":[]}}
+﻿{
+  "HeaderInfo": {
+    "AssemblyVersion": "1.4.20.0",
+    "BaseSiteId": 135,
+    "Server": "",
+    "CreatorName": "aToy0m0",
+    "PackageTime": "2025-11-24T16:12:30.3211365+09:00",
+    "Convertors": [
+      {
+        "SiteId": 135,
+        "SiteTitle": "YOLO_aToy0m0",
+        "ReferenceType": "Sites",
+        "IncludeData": false,
+        "Order": "[]"
+      },
+      {
+        "SiteId": 137,
+        "SiteTitle": "YOLO-output",
+        "ReferenceType": "Results",
+        "IncludeData": false
+      },
+      {
+        "SiteId": 136,
+        "SiteTitle": "YOLOｘFastAPI",
+        "ReferenceType": "Results",
+        "IncludeData": false
+      }
+    ],
+    "IncludeSitePermission": false,
+    "IncludeRecordPermission": false,
+    "IncludeColumnPermission": false,
+    "IncludeNotifications": false,
+    "IncludeReminders": false
+  },
+  "Sites": [
+    {
+      "TenantId": 1,
+      "SiteId": 135,
+      "Title": "YOLO_aToy0m0",
+      "SiteName": "",
+      "SiteGroupName": "",
+      "Body": "",
+      "GridGuide": "",
+      "EditorGuide": "",
+      "CalendarGuide": "",
+      "CrosstabGuide": "",
+      "GanttGuide": "",
+      "BurnDownGuide": "",
+      "TimeSeriesGuide": "",
+      "AnalyGuide": "",
+      "KambanGuide": "",
+      "ImageLibGuide": "",
+      "ReferenceType": "Sites",
+      "ParentId": 134,
+      "InheritPermission": 135,
+      "SiteSettings": {
+        "Version": 1.017,
+        "ReferenceType": "Sites",
+        "NoDisplayIfReadOnly": false,
+        "NotInheritPermissionsWhenCreatingSite": false
+      },
+      "Publish": false,
+      "DisableCrossSearch": false,
+      "Comments": []
+    },
+    {
+      "TenantId": 1,
+      "SiteId": 137,
+      "Title": "YOLO-output",
+      "SiteName": "",
+      "SiteGroupName": "",
+      "Body": "",
+      "GridGuide": "",
+      "EditorGuide": "",
+      "CalendarGuide": "",
+      "CrosstabGuide": "",
+      "GanttGuide": "",
+      "BurnDownGuide": "",
+      "TimeSeriesGuide": "",
+      "AnalyGuide": "",
+      "KambanGuide": "",
+      "ImageLibGuide": "",
+      "ReferenceType": "Results",
+      "ParentId": 135,
+      "InheritPermission": 135,
+      "SiteSettings": {
+        "Version": 1.017,
+        "ReferenceType": "Results",
+        "GridColumns": [
+          "ResultId",
+          "ClassA",
+          "DescriptionA",
+          "DescriptionB",
+          "DescriptionC"
+        ],
+        "EditorColumnHash": {
+          "General": [
+            "ResultId",
+            "ClassA",
+            "Ver",
+            "_Section-3",
+            "DescriptionA",
+            "_Section-2",
+            "DescriptionB",
+            "_Section-1",
+            "DescriptionC",
+            "Comments"
+          ]
+        },
+        "SectionLatestId": 3,
+        "Sections": [
+          {
+            "Id": 3,
+            "LabelText": "見出し:個数",
+            "AllowExpand": true,
+            "Expand": false
+          },
+          {
+            "Id": 2,
+            "LabelText": "見出し:ボックス付き画像",
+            "AllowExpand": false,
+            "Expand": true
+          },
+          {
+            "Id": 1,
+            "LabelText": "見出し:詳細ログ",
+            "AllowExpand": true,
+            "Expand": false
+          }
+        ],
+        "LinkColumns": [
+          "ResultId",
+          "ClassA",
+          "DescriptionA",
+          "DescriptionB",
+          "DescriptionC"
+        ],
+        "Columns": [
+          {
+            "ColumnName": "ClassA",
+            "LabelText": "YOLOｘFastAPI",
+            "ChoicesText": "[[136]]",
+            "CellWidth": 60,
+            "AutoPostBack": true,
+            "Link": true,
+            "SearchType": "PartialMatch"
+          },
+          {
+            "ColumnName": "ResultId",
+            "CellWidth": 60
+          }
+        ],
+        "Links": [
+          {
+            "ColumnName": "ClassA",
+            "SiteId": 136
+          }
+        ],
+        "NoDisplayIfReadOnly": false,
+        "NotInheritPermissionsWhenCreatingSite": false
+      },
+      "Publish": false,
+      "DisableCrossSearch": false,
+      "Comments": []
+    },
+    {
+      "TenantId": 1,
+      "SiteId": 136,
+      "Title": "YOLOｘFastAPI",
+      "SiteName": "",
+      "SiteGroupName": "",
+      "Body": "",
+      "GridGuide": "",
+      "EditorGuide": "",
+      "CalendarGuide": "",
+      "CrosstabGuide": "",
+      "GanttGuide": "",
+      "BurnDownGuide": "",
+      "TimeSeriesGuide": "",
+      "AnalyGuide": "",
+      "KambanGuide": "",
+      "ImageLibGuide": "",
+      "ReferenceType": "Results",
+      "ParentId": 135,
+      "InheritPermission": 136,
+      "SiteSettings": {
+        "Version": 1.017,
+        "ReferenceType": "Results",
+        "GridPageSize": 10,
+        "GridEditorType": 10,
+        "GridColumns": [
+          "ResultId",
+          "Title",
+          "Body",
+          "ClassA~~137,DescriptionB"
+        ],
+        "EditorColumnHash": {
+          "General": [
+            "ResultId",
+            "Title",
+            "Body"
+          ]
+        },
+        "SectionLatestId": 4,
+        "Columns": [
+          {
+            "ColumnName": "Title",
+            "AutoNumberingFormat": "[yyyyMMdd]-[nnnnn]-YOLO画像認識",
+            "AutoNumberingResetType": "Day",
+            "CellWidth": 0,
+            "ValidateRequired": false,
+            "EditorReadOnly": true
+          },
+          {
+            "ColumnName": "Body",
+            "ViewerSwitchingType": 2,
+            "ThumbnailLimitSize": 600.0
+          }
+        ],
+        "ViewLatestId": 1,
+        "Views": [
+          {
+            "Id": 1,
+            "Name": "一括削除用",
+            "ApiColumnKeyDisplayType": 0,
+            "ApiColumnValueDisplayType": 0,
+            "CalendarSiteId": 0,
+            "CalendarTimePeriod": "Monthly",
+            "CalendarFromTo": "DateA",
+            "CrosstabGroupByX": "CreatedTime",
+            "CrosstabGroupByY": "Columns",
+            "CrosstabAggregateType": "Total",
+            "CrosstabTimePeriod": "Monthly",
+            "KambanAggregateType": "Count",
+            "ApiDataType": 0
+          }
+        ],
+        "ServerScripts": [
+          {
+            "Title": "serverside-test",
+            "Name": "serverside-test",
+            "AfterCreate": true,
+            "AfterUpdate": true,
+            "Body": "// =======================\n// 参考資料\n// =======================\n// FAQ：バッチ処理で添付ファイルを含んだレコードを新規作成したい\n// https://pleasanter.org/ja/manual/faq-create-record-with-attachment\n// →開発者向け機能：API：テーブル操作：レコード作成\n//   https://pleasanter.org/ja/manual/api-record-create\n// \n// テーブルの管理：エディタ：項目の詳細設定：自動採番\n// https://pleasanter.org/ja/manual/auto-numbering\n\n\n// =======================\n// MARK: 初期設定\n// =======================\n\n// pleasanterサーバーから見たFast APIサーバーのIP\nconst API_BASE_URL = \"http://API_BASE_URL:8000\";\nconst API_ENDPOINT = API_BASE_URL + \"/detect\";\nconst YOLO_API_KEY = \"YOLO_API_KEY\";\n\n// pleasanterサーバーから見たpleasanterサーバー自身のIP\nconst PLEASANTER_BASE_URL = \"http://localhost\";\nconst PLEASANTER_API_KEY = \"PLEASANTER_API_KEY\";\n\n// 子サイトID（必要に応じて変更）\nconst CHILD_SITE_ID = CHILD_SITE_ID;\n\n// HTTPリクエストのタイムアウト設定値\nconst REQUEST_TIMEOUT_MS = 15000;\n\n// =======================\n// MARK: MediaType = \"application/json\" で POST リクエストを送信する関数\n// =======================\nfunction postJson(url, body, headers = {}) {\n  context.Log(\"===== HTTP POST (httpClient) =====\");\n  httpClient.RequestHeaders.Clear();\n  httpClient.RequestUri = url;\n  httpClient.MediaType = \"application/json\";\n  for (const [key, value] of Object.entries(headers)) {\n    httpClient.RequestHeaders.Add(key, value);\n  }\n  httpClient.Content = JSON.stringify(body);\n  httpClient.TimeOut = REQUEST_TIMEOUT_MS;\n\n  const responseText = httpClient.Post();\n  context.Log(`🔄 HTTP Status: ${httpClient.StatusCode}`);\n  context.Log(`🔍 IsSuccess: ${httpClient.IsSuccess}`);\n  if (httpClient.IsTimeOut) {\n    context.Log(\"⚠️ タイムアウト発生: リクエストが指定時間内に応答しませんでした。\");\n  }\n\n  if (!httpClient.IsSuccess) {\n    context.Log(`レスポンス本文: ${responseText}`);\n    throw new Error(`HTTPエラー: ${httpClient.StatusCode}`);\n  }\n\n  try {\n    const json = JSON.parse(responseText);\n    return { data: json, rawText: responseText };\n  } catch (e) {\n    context.Log(`❌ JSON解析エラー: ${e.message}`);\n    context.Log(`レスポンス内容: ${responseText}`);\n    throw new Error(`JSON解析エラー: ${e.message}`);\n  }\n}\n\n// =======================\n// MARK: APIを使って添付ファイルを Base64 で取得する関数\n// =======================\nfunction getAttachmentBase64(guid) {\n  const url = `${PLEASANTER_BASE_URL}/api/binaries/${guid}/get`;\n\n  context.Log(\"===== getAttachmentBase64 開始 =====\");\n  context.Log(`📡 baseUrl : ${PLEASANTER_BASE_URL}`);\n  context.Log(`📎 URL : ${url}`);\n  context.Log(`🎯 対象GUID : ${guid}`);\n\n  const requestData = {\n    ApiVersion: \"1.1\",\n    ApiKey: PLEASANTER_API_KEY\n  };\n\n  const { data } = postJson(url, requestData);\n\n  if (!data || !data.Response || !data.Response.Base64) {\n    context.Log(\"⚠️ 応答にBase64データが含まれていません。\");\n    throw new Error(\"Base64データが存在しません。\");\n  }\n\n  context.Log(`📦 添付ファイル名: ${data.Response.Name || \"(不明)\"}`);\n  context.Log(`📏 ファイルサイズ: ${data.Response.Size || \"N/A\"} bytes`);\n  context.Log(\"===== getAttachmentBase64 完了 =====\");\n\n  return data.Response.Base64;\n}\n\n// =======================\n// MARK: data URLからBase64と拡張子を抽出する関数\n// =======================\nfunction extractBase64FromDataUrl(dataUrl) {\n  if (typeof dataUrl !== \"string\" || !dataUrl.length) {\n    context.Log(\"⚠️ image_with_boxes が空文字のため解析をスキップします。\");\n    return null;\n  }\n\n  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);\n  if (!match) {\n    context.Log(\"⚠️ image_with_boxes の形式が data URL ではありません。\");\n    return null;\n  }\n\n  const mimeType = match[1];\n  const base64 = match[2];\n  if (!base64) {\n    context.Log(\"⚠️ image_with_boxes に Base64 が含まれていません。\");\n    return null;\n  }\n\n  let extension = \".png\";\n  if (mimeType && mimeType.includes(\"/\")) {\n    const subtype = mimeType.split(\"/\")[1].split(\"+\")[0];\n    if (subtype) {\n      extension = \".\" + subtype;\n    }\n  }\n\n  return { mimeType, base64, extension };\n}\n\n// =======================\n// MARK: YOLO応答から DescriptionHash を構築\n// =======================\nfunction buildDescriptionHashFromYolo(yoloResult) {\n  if (!yoloResult || typeof yoloResult !== \"object\") {\n    return null;\n  }\n\n  const descriptionHash = {};\n\n  if (yoloResult.counts && Object.keys(yoloResult.counts).length) {\n    try {\n      descriptionHash.DescriptionA = JSON.stringify(yoloResult.counts, null, 2);\n    } catch (e) {\n      context.Log(`⚠️ counts の JSON 化に失敗: ${e.message}`);\n    }\n  }\n\n  if (Array.isArray(yoloResult.detections) && yoloResult.detections.length) {\n    try {\n      descriptionHash.DescriptionC = JSON.stringify(yoloResult.detections, null, 2);\n    } catch (e) {\n      context.Log(`⚠️ detections の JSON 化に失敗: ${e.message}`);\n    }\n  }\n\n  return Object.keys(descriptionHash).length ? descriptionHash : null;\n}\n\n// =======================\n// MARK: APIを使って DescriptionB にBase64形式の画像を上書きする関数\n// =======================\nfunction updateImageHashOnly(recordId, image, options = {}) {\n  if (!recordId) {\n    context.Log(\"⚠️ recordId が取得できないため ImageHash 更新をスキップします。\");\n    return;\n  }\n  if (!image || !image.base64) {\n    context.Log(\"⚠️ 更新対象の画像情報が不足しているため ImageHash 更新をスキップします。\");\n    return;\n  }\n\n  let extension = image.extension || (image.name ? \".\" + image.name.split(\".\").pop() : \".jpg\");\n  if (!extension.startsWith(\".\")) {\n    extension = \".\" + extension;\n  }\n  extension = extension.toLowerCase();\n  const position = Number.isFinite(options.position) ? options.position : -1;\n  const alt = options.alt || image.alt || image.name || \"imageBody\";\n  const headNewLine = options.headNewLine ?? true;\n  const endNewLine = options.endNewLine ?? true;\n\n  const descriptionHash = options.descriptionHash && Object.keys(options.descriptionHash).length\n    ? options.descriptionHash\n    : null;\n\n  const payload = {\n    ApiVersion: \"1.1\",\n    ApiKey: PLEASANTER_API_KEY,\n    Body: \"\",\n    ImageHash: {\n      DescriptionB: {\n        HeadNewLine: headNewLine,\n        EndNewLine: endNewLine,\n        Position: position,\n        Alt: alt,\n        Extension: extension,\n        Base64: image.base64\n      }\n    }\n  };\n\n  context.Log(`📦 画像情報: name=${image.name || \"(不明)\"}, extension=${extension}, alt=${alt}`);\n\n  if (descriptionHash) {\n    payload.DescriptionHash = descriptionHash;\n  }\n\n  const url = `${PLEASANTER_BASE_URL}/api/items/${recordId}/update`;\n  context.Log(\"===== updateImageHashOnly 開始 =====\");\n  context.Log(`📡 URL: ${url}`);\n  context.Log(`🆔 レコードID: ${recordId}`);\n  const { rawText } = postJson(url, payload);\n  context.Log(`✅ ImageHash更新応答: ${rawText.substring(0, 200)}...`);\n  context.Log(\"===== updateImageHashOnly 完了 =====\");\n}\n\n// =======================\n// MARK: 子レコードのID検索する関数(複数存在する場合は新しい順にソートされる)\n// =======================\nfunction getChildRecord(parentRecordId) {\n  context.Log(`親レコードID : ${parentRecordId}`);\n  if (!parentRecordId) {\n    context.Log(\"⚠ 親レコードIDが空のため子レコード検索をスキップします。\");\n    return null;\n  }\n\n  let data = {\n    \"View\": {\n      \"ColumnFilterHash\": {\n          \"ClassA\": `[\"${parentRecordId}\"]`\n      },\n      \"ColumnSorterHash\":{\n        \"DateA\":\"asc\"\n      }\n    }\n  };\n  context.Log(`子レコード検索 : data: ${JSON.stringify(data)}`);\n  let records;\n  try {\n    records = items.Get(CHILD_SITE_ID, JSON.stringify(data));\n    context.Log(`子レコード検索 : records.Length: ${JSON.stringify(records.Length)}`);\n  } catch (e) {\n    context.Log(`❗ 子レコード検索 API で例外が発生しました: ${e.message}`);\n    context.Error(`child search failed: ${e.message}`);\n    return null;\n  }\n\n  if (records.Length) {\n    context.Log(`records.Length : ${records.Length}`);\n    context.Log(\"正しいメソッドはLengthです。\");\n  } else {\n    context.Log(`records.length : ${records.length}`);\n    context.Log(\"正しいメソッドはlengthです。\");\n  }\n\n  for (let record of records) {\n    context.Log(`children ResultId : ${record.ResultId}`);\n  }\n\n  // return records[0]?.ResultId || null;\n  return records || null;\n}\n// =======================\n// MARK: メイン処理\n// =======================\ntry {\n  context.Log(\"===== 添付＋本文画像処理開始 =====\");\n\n  const imagesBase64 = [];\n\n  // MARK: 1. Body 内の画像 (/binaries/xxx/show) のみを取得 ---\n  const body = model.Body || \"\";\n  const regex = /\\/binaries\\/([A-Fa-f0-9\\-]{32,})\\/show/g;\n  let match;\n  while ((match = regex.exec(body)) !== null) {\n    const guid = match[1];\n    context.Log(`Body画像検出 GUID=${guid}`);\n    const b64 = getAttachmentBase64(guid);\n    imagesBase64.push({ name: `${guid}.jpg`, source: \"body\", base64: b64 });\n  }\n\n  context.Log(`✅ 取得完了: ${imagesBase64.length} 件を Base64 化しました。`);\n\n  // MARK: 2. 本文画像を優先し1枚だけ YOLO Fast API へ送信 ---\n  let yoloResult = null;\n  let selectedImage = null;\n  let boxedImage = null;\n  if (imagesBase64.length) {\n    selectedImage = imagesBase64.find(img => img.source === \"body\") || imagesBase64[0];\n    context.Log(`🖼 送信対象: ${selectedImage.name} (source=${selectedImage.source})`);\n\n    const payload = {\n      images: [{\n        fileName: selectedImage.name,\n        base64: selectedImage.base64\n      }]\n    };\n\n    try {\n      const { data, rawText } = postJson(\n        API_ENDPOINT,\n        payload,\n        { Authorization: \"Bearer \" + YOLO_API_KEY }\n      );\n\n      yoloResult = data;\n      context.Log(`✅ YOLO応答: ${rawText.substring(0, 500)}...`);\n\n      if (data.image_with_boxes) {\n        const parsedImage = extractBase64FromDataUrl(data.image_with_boxes);\n        if (parsedImage) {\n          const originalName = selectedImage && selectedImage.name ? selectedImage.name : \"yolo\";\n          const baseName = originalName.replace(/\\.[^.]+$/, \"\");\n          boxedImage = {\n            name: `${baseName}_boxes`,\n            base64: parsedImage.base64,\n            extension: parsedImage.extension,\n            alt: `${baseName}_boxes`\n          };\n          context.Log(\"✅ image_with_boxes を DescriptionB 用の画像として準備しました。\");\n        } else {\n          context.Log(\"⚠️ image_with_boxes の解析に失敗したため元画像を使用します。\");\n        }\n      } else {\n        context.Log(\"⚠️ YOLO応答に image_with_boxes が含まれていません。\");\n      }\n    } catch (apiError) {\n      context.Log(`❌ YOLO API 呼び出し失敗: ${apiError.message}`);\n      context.Error(`YOLO API error: ${apiError.message}`);\n    }\n  } else {\n    context.Log(\"⚠️ 送信する画像が無いため YOLO API 呼び出しをスキップしました。\");\n  }\n\n  model.DescriptionA = JSON.stringify({\n    images: imagesBase64.map(img => ({\n      fileName: img.name,\n      source: img.source,\n      base64Preview: img.base64.substring(0, 40) + \"...\"\n    })),\n    selectedImage: selectedImage ? {\n      fileName: selectedImage.name,\n      source: selectedImage.source\n    } : null,\n    yoloResult\n  }, null, 2);\n\n  // MARK: 3. API経由で ImageHash を更新 (DescriptionB) ---\n  //// boxedImage or selectedImage(元画像) の優先順位で設定\n  let imageForHash = null;\n  if (boxedImage) {\n    context.Log(\"📎 DescriptionB 用に image_with_boxes を使用します。\");\n    imageForHash = boxedImage;\n  } else if (selectedImage) {\n    context.Log(\"📎 DescriptionB 用に元画像を使用します。\");\n    imageForHash = selectedImage;\n  }\n  // \n  if (imageForHash) {\n    // 子レコードを検索し、ないのであれば作成\n    const recordId = model.ResultId;\n    let childRecordId = null;\n    const results = getChildRecord(recordId);\n    if (!results) {\n      context.Log(`❌ getChildRecord -> results取得エラー`);\n    } else if (results.Length > 0) {\n      context.Log(`✅ 子レコードが既に存在します。 : ${results[0].ResultId}`);\n      // 検索した子レコードのIDを代入\n      childRecordId = results[0].ResultId;\n    } else {\n      context.Log(`📎 子レコードが存在しません。新規作成します : ${results.Length} 件`);\n      // 子レコードを作成し、IDを取得\n      let apiModelNewChild = items.NewResult();\n      //// 親レコードIDを子レコードのクラスAに設定し、リンクさせる\n      apiModelNewChild.ClassA = model.ResultId;\n      context.Log(`apiModelNewChild.ClassA : ${apiModelNewChild.ClassA}`);\n      items.Create(CHILD_SITE_ID, apiModelNewChild);\n      //// 作成した子レコードのIDを代入\n      childRecordId = apiModelNewChild.ResultId;\n    }\n    // const childRecordId = apiModelNewChild.ResultId;\n    context.Log(`childRecordId : ${childRecordId}`);\n    const descriptionHash = buildDescriptionHashFromYolo(yoloResult);\n    \n    // 子レコードのImageHash 更新\n    try {\n      updateImageHashOnly(childRecordId, imageForHash, {\n        position: 3,\n        headNewLine: false,\n        endNewLine: false,\n        alt: imageForHash.alt || imageForHash.name,\n        descriptionHash\n      });\n      if (boxedImage) {\n        context.Log(\"📎 DescriptionB に image_with_boxes を登録しました。\");\n      } else {\n        context.Log(\"📎 image_with_boxes が無いため元画像を登録しました。\");\n      }\n    } catch (updateError) {\n      context.Log(`❌ ImageHash更新API エラー: ${updateError.message}`);\n      context.Error(`ImageHash update failed: ${updateError.message}`);\n    }\n  } else {\n    context.Log(\"⚠️ ImageHash を設定する画像が無いため API 更新をスキップしました。\");\n  }\n\n  context.Log(\"===== 処理完了: DescriptionA 更新 =====\");\n} catch (e) {\n  context.Log(`❌ Error: ${e.message}`);\n  context.Error(`Error in processing: ${e.message}`);\n}",
+            "TryCatch": true,
+            "Id": 2
+          }
+        ],
+        "NoDisplayIfReadOnly": false,
+        "NotInheritPermissionsWhenCreatingSite": false
+      },
+      "Publish": false,
+      "DisableCrossSearch": false,
+      "Comments": []
+    }
+  ],
+  "Data": [],
+  "Permissions": [],
+  "PermissionIdList": {
+    "DeptIdList": [],
+    "GroupIdList": [],
+    "UserIdList": []
+  }
+}
